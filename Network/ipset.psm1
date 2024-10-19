@@ -28,44 +28,43 @@
 
 # Function to get the current IPv4 and IPv6 settings for all network adapters
 function Get-NetworkAdapterSettings {
+    # Function to convert prefix length to subnet mask
+    function ConvertTo-SubnetMask($prefixLength) {
+        return [string]::Join('.', ([Convert]::ToString(([math]::Pow(2, 32) - [math]::Pow(2, 32 - $prefixLength)), 2) -split '(?<=\G.{8})(?!$)' | % {[Convert]::ToInt32($_, 2)}))
+    }
+
     # Retrieve all network adapters
     $adapters = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
-
     foreach ($adapter in $adapters) {
         $adapterName = $adapter.InterfaceAlias
         Write-Host "Adapter: $adapterName"
-
+        
         # Get IPv4 settings
         $ipv4Info = Get-NetIPAddress -InterfaceAlias $adapterName -AddressFamily IPv4 -ErrorAction SilentlyContinue
-        
         if ($ipv4Info) {
             # Check for IPv4 gateway
             $gatewayInfo = Get-NetRoute -InterfaceAlias $adapterName -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue
-            
             $gateway = if ($gatewayInfo) { $gatewayInfo.NextHop } else { "No gateway set" }
             $dnsInfo = Get-DnsClientServerAddress -InterfaceAlias $adapterName -AddressFamily IPv4
-            
             $preferredDns = if ($dnsInfo) { $dnsInfo.ServerAddresses -join ', ' } else { "No DNS set" }
+            $subnetMask = ConvertTo-SubnetMask $ipv4Info.PrefixLength
 
             Write-Host "IPv4: On"
             Write-Host "IP Address: $($ipv4Info.IPAddress)"
-            Write-Host "Subnet Mask: $($ipv4Info.PrefixLength)"
+            Write-Host "Subnet Mask: $subnetMask (Prefix Length: $($ipv4Info.PrefixLength))"
             Write-Host "Gateway: $gateway"
             Write-Host "Preferred DNS: $preferredDns"
         } else {
             Write-Host "IPv4: Off"
         }
-
+        
         # Get IPv6 settings
         $ipv6Info = Get-NetIPAddress -InterfaceAlias $adapterName -AddressFamily IPv6 -ErrorAction SilentlyContinue
-        
         if ($ipv6Info) {
             # Check for IPv6 gateway
             $gatewayInfo = Get-NetRoute -InterfaceAlias $adapterName -DestinationPrefix '::/0' -ErrorAction SilentlyContinue
-            
             $gateway = if ($gatewayInfo) { $gatewayInfo.NextHop } else { "No gateway set" }
             $dnsInfo = Get-DnsClientServerAddress -InterfaceAlias $adapterName -AddressFamily IPv6
-            
             $preferredDns = if ($dnsInfo) { $dnsInfo.ServerAddresses -join ', ' } else { "No DNS set" }
 
             Write-Host "IPv6: On"
@@ -76,10 +75,11 @@ function Get-NetworkAdapterSettings {
         } else {
             Write-Host "IPv6: Off"
         }
-        
+
         Write-Host "-----------------------------------"
     }
 }
+
 
 # Function to set the IPv4 and IPv6 settings for a specified adapter
 function Set-NetworkAdapterSettings {
