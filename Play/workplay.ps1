@@ -1,107 +1,84 @@
-Add-Type -AssemblyName 'System.Windows.Forms'
-Add-Type -AssemblyName 'System.Threading'
-
-function MoveMouseInArc {
+# Define a function to simulate Alt+Tab key presses with a pause between Tab presses
+function Switch-Window {
     param (
-        [int]$startX,
-        [int]$startY,
-        [int]$endX,
-        [int]$endY,
-        [int]$duration
+        [int]$TabCount = 1,                  # Number of Tab presses
+        [int]$PauseBetweenTabs = 500         # Pause between Tab presses in milliseconds (default: 500ms)
     )
-    $steps = 100
-    $deltaX = ($endX - $startX) / $steps
-    $deltaY = ($endY - $startY) / $steps
 
-    for ($i = 0; $i -le $steps; $i++) {
-        $t = $i / $steps
-        # Compute the arc (Bezier curve approximation)
-        $x = [math]::Pow((1 - $t), 2) * $startX + 2 * (1 - $t) * $t * ($startX + $endX) / 2 + [math]::Pow($t, 2) * $endX
-        $y = [math]::Pow((1 - $t), 2) * $startY + 2 * (1 - $t) * $t * ($startY + $endY) / 2 + [math]::Pow($t, 2) * $endY
-        [Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point([math]::Round($x), [math]::Round($y))
-        Start-Sleep -Milliseconds ($duration * 10 / $steps) # Adjust timing for smoothness
-    }
-}
+    # Add the required .NET types for key simulation
+    Add-Type -TypeDefinition @"
+    using System;
+    using System.Runtime.InteropServices;
 
-function SimulateKeyPress {
-    param (
-        [string]$key,
-        [int]$duration
-    )
-    $endTime = [DateTime]::Now.AddSeconds($duration)
-    while ([DateTime]::Now -lt $endTime) {
-        [System.Windows.Forms.SendKeys]::SendWait($key)
-        MoveMouseRandomly
-        Start-Sleep -Milliseconds 100
-    }
-}
+    public class KeyboardHelper {
+        [DllImport("user32.dll", CharSet = CharSet.Auto, ExactSpelling = true)]
+        public static extern short GetKeyState(int keyCode);
+        
+        [DllImport("user32.dll", CharSet = CharSet.Auto, ExactSpelling = true)]
+        public static extern void keybd_event(byte virtualKey, byte scanCode, int flags, int extraInfo);
+        
+        public const int KEYEVENTF_KEYDOWN = 0x0000;
+        public const int KEYEVENTF_KEYUP = 0x0002;
+        public const byte VK_MENU = 0x12; // Alt key
+        public const byte VK_TAB = 0x09;  // Tab key
 
-function MoveMouseRandomly {
-    $random = New-Object System.Random
-    $currentPos = [Windows.Forms.Cursor]::Position
-    $newX = $random.Next(100, 800)
-    $newY = $random.Next(200, 900)
-    MoveMouseInArc $currentPos.X $currentPos.Y $newX $newY 2
-}
+        public static void AltTab(int tabPresses, int pauseBetweenTabs) {
+            // Hold Alt down
+            keybd_event(VK_MENU, 0, KEYEVENTF_KEYDOWN, 0);
+            
+            for (int i = 0; i < tabPresses; i++) {
+                // Press Tab
+                keybd_event(VK_TAB, 0, KEYEVENTF_KEYDOWN, 0);
+                keybd_event(VK_TAB, 0, KEYEVENTF_KEYUP, 0);
 
-# Flag to control the loop
-$global:stopScript = $false
+                // Pause before pressing Tab again
+                System.Threading.Thread.Sleep(pauseBetweenTabs);
+            }
 
-# Listener for the Escape key
-$form = [Windows.Forms.Form]::new()
-$form.add_KeyDown({
-    if ($_.KeyCode -eq [Windows.Forms.Keys]::Escape) {
-        $global:stopScript = $true
-        $form.Close()
-    }
-})
-$form.Show()
-$form.Focus()
-
-$altTabCount = 3
-
-while (-not $global:stopScript) {
-    # 1. Alt+Tab 3 or 4 times with 1-second intervals, then pause for 1 second while moving the mouse
-    for ($i = 0; $i -lt $altTabCount; $i++) {
-        if ($i -eq 0) {
-            [System.Windows.Forms.SendKeys]::SendWait("%{TAB}")
-        } else {
-            [System.Windows.Forms.SendKeys]::SendWait("{TAB}")
+            // Release Alt
+            keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
         }
-        MoveMouseRandomly
-        Start-Sleep -Seconds 1
     }
-    [System.Windows.Forms.SendKeys]::SendWait("%{TAB}")  # Release Alt key after sequence
-    Start-Sleep -Seconds 1
+"@
 
-    # Toggle between 3 and 4 Alt+Tabs for each cycle
-    $altTabCount = if ($altTabCount -eq 3) { 4 } else { 3 }
-
-    # 2. Scroll up for 10 seconds then pause for 1 second while moving the mouse
-    $endTime = [DateTime]::Now.AddSeconds(10)
-    while ([DateTime]::Now -lt $endTime -and -not $global:stopScript) {
-        [System.Windows.Forms.SendKeys]::SendWait("{UP}")
-        MoveMouseRandomly
-        Start-Sleep -Milliseconds 100
-    }
-    Start-Sleep -Seconds 1
-
-    # 3. Scroll down for 10 seconds then pause for 1 second while moving the mouse
-    $endTime = [DateTime]::Now.AddSeconds(10)
-    while ([DateTime]::Now -lt $endTime -and -not $global:stopScript) {
-        [System.Windows.Forms.SendKeys]::SendWait("{DOWN}")
-        MoveMouseRandomly
-        Start-Sleep -Milliseconds 100
-    }
-    Start-Sleep -Seconds 1
-
-    # 4. Press left arrow for 5 seconds then pause for 1 second while moving the mouse
-    SimulateKeyPress("{LEFT}", 5)
-    Start-Sleep -Seconds 1
-
-    # 5. Press right arrow for 5 seconds then pause for 1 second while moving the mouse
-    SimulateKeyPress("{RIGHT}", 5)
-    Start-Sleep -Seconds 1
+    # Call the method to simulate Alt+Tab with a pause between each Tab press
+    [KeyboardHelper]::AltTab($TabCount, $PauseBetweenTabs)
 }
 
-$form.Dispose()
+# Add .NET type for key detection
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Threading;
+
+public class KeyListener {
+    [DllImport("user32.dll", CharSet = CharSet.Auto, ExactSpelling = true)]
+    public static extern short GetAsyncKeyState(int keyCode);
+    
+    public const int VK_ESCAPE = 0x1B; // Escape key
+
+    public static bool IsEscapePressed() {
+        return GetAsyncKeyState(VK_ESCAPE) != 0;
+    }
+}
+"@
+
+# Loop to continuously switch windows
+Write-Host "Press the Escape key to stop the window switching."
+
+while ($true) {
+    # Switch to the third window with a 1-second pause between Tab presses
+    Switch-Window -TabCount 3 -PauseBetweenTabs 1000
+    
+    # Switch to the fourth window
+    Switch-Window -TabCount 4 -PauseBetweenTabs 1000
+
+    # Check if the Escape key has been pressed
+    if ([KeyListener]::IsEscapePressed()) {
+        Write-Host "Escape key pressed. Stopping..."
+        break
+    }
+
+    # Sleep between cycles
+    Start-Sleep -Milliseconds 500
+}
