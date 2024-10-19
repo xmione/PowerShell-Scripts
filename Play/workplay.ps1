@@ -1,3 +1,34 @@
+# Define a function to simulate mouse scrolls
+function Scroll-Mouse {
+    param (
+        [int]$ScrollAmount = 120,            # Amount to scroll (positive for up, negative for down)
+        [int]$ScrollDurationInMilliseconds = 5000  # Duration to scroll in milliseconds
+    )
+
+    # Add .NET types for mouse scrolling
+    Add-Type -TypeDefinition @"
+    using System;
+    using System.Runtime.InteropServices;
+
+    public class MouseHelper {
+        [DllImport("user32.dll", CharSet = CharSet.Auto, ExactSpelling = true)]
+        public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, int dwExtraInfo);
+
+        public const uint MOUSEEVENTF_WHEEL = 0x0800; // Scroll wheel event
+    }
+"@
+
+    # Calculate the number of scrolls to perform based on duration
+    $interval = 100  # Interval in milliseconds
+    $iterations = [math]::Floor($ScrollDurationInMilliseconds / $interval)
+
+    # Perform the scrolling in intervals
+    for ($i = 0; $i -lt $iterations; $i++) {
+        [MouseHelper]::mouse_event([MouseHelper]::MOUSEEVENTF_WHEEL, 0, 0, $ScrollAmount, 0)
+        Start-Sleep -Milliseconds $interval
+    }
+}
+
 # Define a function to simulate Alt+Tab key presses with a pause between Tab presses
 function Switch-Window {
     param (
@@ -49,7 +80,6 @@ function Switch-Window {
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
-using System.Threading;
 
 public class KeyListener {
     [DllImport("user32.dll", CharSet = CharSet.Auto, ExactSpelling = true)]
@@ -63,13 +93,28 @@ public class KeyListener {
 }
 "@
 
-# Loop to continuously switch windows
-Write-Host "Press the Escape key to stop the window switching."
+# Loop to continuously switch windows and scroll
+Write-Host "Press the Escape key to stop the window switching and scrolling."
 
 while ($true) {
-    # Switch to the third window with a 1-second pause between Tab presses
+    # Switch to the third window
     Switch-Window -TabCount 3 -PauseBetweenTabs 1000
     
+    # Check if the Escape key has been pressed
+    if ([KeyListener]::IsEscapePressed()) {
+        Write-Host "Escape key pressed. Stopping..."
+        break
+    }
+
+    # Scroll up for 5 seconds
+    Scroll-Mouse -ScrollAmount 120 -ScrollDurationInMilliseconds 5000
+
+    # Check if the Escape key has been pressed
+    if ([KeyListener]::IsEscapePressed()) {
+        Write-Host "Escape key pressed. Stopping..."
+        break
+    }
+
     # Switch to the fourth window
     Switch-Window -TabCount 4 -PauseBetweenTabs 1000
 
@@ -79,6 +124,15 @@ while ($true) {
         break
     }
 
-    # Sleep between cycles
+    # Scroll down for 5 seconds
+    Scroll-Mouse -ScrollAmount -120 -ScrollDurationInMilliseconds 5000
+
+    # Check if the Escape key has been pressed
+    if ([KeyListener]::IsEscapePressed()) {
+        Write-Host "Escape key pressed. Stopping..."
+        break
+    }
+
+    # Sleep between cycles to reduce CPU load
     Start-Sleep -Milliseconds 500
 }
