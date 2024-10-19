@@ -1,29 +1,22 @@
 ﻿<#
     Author  : Solomio S. Sisante
-    Creatod : October 19, 2024
+    Created : October 19, 2024
     FileName: ipset.psm1
-    Purpose : Network Tools module to set the IPv4 and IPv6 settings.
+    Purpose : Network Tools module to get and set IPv4 and IPv6 settings.
 
-    Note    : There is a batch file import-ipset.bat that you can right click and run as admin from the Windows Explorer to run this script.
-
-    .\ipset.ps1
-    
-    
-    This is used to get and set the network adapter settings:
+    Usage   : 
 
     Get-NetworkAdapterSettings
 
     Set-NetworkAdapterSettings -AdapterName "vEthernet (Bridged Network)" 
                                -IPv4Address "192.168.100.73" 
-                               -SubnetMask 24 
+                               -SubnetMask "255.255.255.0" 
                                -Gateway "192.168.100.1" 
-                               -PreferredDNS "8.8.8.8" 
+                               -PreferredDNS "192.168.100.1" 
                                -AlternateDNS "8.8.4.4" 
-                               -DnsOverHttpsIPv4 $true 
-                               -IPv6Address "2001:db8::1" 
-                               -DnsOverHttpsIPv6 $true
-
-
+                               -DnsOverHttpsIPv4 $false 
+                               -IPv6Address "fe80::c80a:d920:24dd:3f05%4" 
+                               -DnsOverHttpsIPv6 $false
 #>
 
 # Function to get the current IPv4 and IPv6 settings for all network adapters
@@ -46,14 +39,21 @@ function Get-NetworkAdapterSettings {
             $gatewayInfo = Get-NetRoute -InterfaceAlias $adapterName -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue
             $gateway = if ($gatewayInfo) { $gatewayInfo.NextHop } else { "No gateway set" }
             $dnsInfo = Get-DnsClientServerAddress -InterfaceAlias $adapterName -AddressFamily IPv4
-            $preferredDns = if ($dnsInfo) { $dnsInfo.ServerAddresses -join ', ' } else { "No DNS set" }
+            $preferredDns = if ($dnsInfo) { $dnsInfo.ServerAddresses[0] } else { "No DNS set" }
+            $alternateDns = if ($dnsInfo -and $dnsInfo.ServerAddresses.Count -gt 1) { $dnsInfo.ServerAddresses[1] } else { "No alternate DNS set" }
             $subnetMask = ConvertTo-SubnetMask $ipv4Info.PrefixLength
+
+            # Check DNS over HTTPS for IPv4
+            $dnsClientSettings = Get-DnsClient -InterfaceAlias $adapterName
+            $dnsOverHttpsIPv4 = if ($dnsClientSettings.UseDnsOverHttps -eq $true) { "On" } else { "Off" }
 
             Write-Host "IPv4: On"
             Write-Host "IP Address: $($ipv4Info.IPAddress)"
             Write-Host "Subnet Mask: $subnetMask (Prefix Length: $($ipv4Info.PrefixLength))"
             Write-Host "Gateway: $gateway"
             Write-Host "Preferred DNS: $preferredDns"
+            Write-Host "Alternate DNS: $alternateDns"
+            Write-Host "DNS over HTTPS (IPv4): $dnsOverHttpsIPv4"
         } else {
             Write-Host "IPv4: Off"
         }
@@ -65,13 +65,19 @@ function Get-NetworkAdapterSettings {
             $gatewayInfo = Get-NetRoute -InterfaceAlias $adapterName -DestinationPrefix '::/0' -ErrorAction SilentlyContinue
             $gateway = if ($gatewayInfo) { $gatewayInfo.NextHop } else { "No gateway set" }
             $dnsInfo = Get-DnsClientServerAddress -InterfaceAlias $adapterName -AddressFamily IPv6
-            $preferredDns = if ($dnsInfo) { $dnsInfo.ServerAddresses -join ', ' } else { "No DNS set" }
+            $preferredDns = if ($dnsInfo) { $dnsInfo.ServerAddresses[0] } else { "No DNS set" }
+            $alternateDns = if ($dnsInfo -and $dnsInfo.ServerAddresses.Count -gt 1) { $dnsInfo.ServerAddresses[1] } else { "No alternate DNS set" }
+
+            # Check DNS over HTTPS for IPv6
+            $dnsOverHttpsIPv6 = if ($dnsClientSettings.UseDnsOverHttps -eq $true) { "On" } else { "Off" }
 
             Write-Host "IPv6: On"
             Write-Host "IP Address: $($ipv6Info.IPAddress)"
             Write-Host "Subnet Prefix Length: $($ipv6Info.PrefixLength)"
             Write-Host "Gateway: $gateway"
             Write-Host "Preferred DNS: $preferredDns"
+            Write-Host "Alternate DNS: $alternateDns"
+            Write-Host "DNS over HTTPS (IPv6): $dnsOverHttpsIPv6"
         } else {
             Write-Host "IPv6: Off"
         }
@@ -123,20 +129,3 @@ function Set-NetworkAdapterSettings {
 }
 
 Export-ModuleMember -Function Get-NetworkAdapterSettings, Set-NetworkAdapterSettings
-<#
-# Example usage to get settings
-Get-NetworkAdapterSettings
-
-# Example usage to set settings (uncomment and modify the parameters accordingly)
-Set-NetworkAdapterSettings -AdapterName "vEthernet (Bridged Network)" 
-                           -IPv4Address "192.168.100.73" 
-                           -SubnetMask 24 
-                           -Gateway "192.168.100.1" 
-                           -PreferredDNS "8.8.8.8" 
-                           -AlternateDNS "8.8.4.4" 
-                           -DnsOverHttpsIPv4 $true 
-                           -IPv6Address "2001:db8::1" 
-                           -DnsOverHttpsIPv6 $true
-
-
-#>
