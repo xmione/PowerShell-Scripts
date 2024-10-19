@@ -8,15 +8,20 @@
 
     Get-NetworkAdapterSettings
 
-    Set-NetworkAdapterSettings -AdapterName "vEthernet (Bridged Network)" 
-                               -IPv4Address "192.168.100.73" 
-                               -SubnetMask "255.255.255.0" 
-                               -Gateway "192.168.100.1" 
-                               -PreferredDNS "192.168.100.1" 
-                               -AlternateDNS "8.8.4.4" 
-                               -DnsOverHttpsIPv4 $false 
-                               -IPv6Address "fe80::c80a:d920:24dd:3f05%4" 
-                               -DnsOverHttpsIPv6 $false
+    Set-NetworkAdapterSettings -AdapterName "vEthernet (Bridged Network)" `
+                                -IPv4Address "192.168.100.73" `
+                                -SubnetMask 24 `
+                                -Gateway "192.168.100.1" `
+                                -PreferredDNS "8.8.8.8" `
+                                -AlternateDNS $null `
+                                -DnsOverHttpsIPv4 $false `
+                                -IPv6Address "fe80::c80a:d920:24dd:3f05" ` # Removed the zone index
+                                -IPv6PrefixLength 64 `
+                                -IPv6Gateway $null `
+                                -IPv6PreferredDNS $null `
+                                -IPv6AlternateDNS $null `
+                                -DnsOverHttpsIPv6 $false
+
 #>
 
 # Function to get the current IPv4 and IPv6 settings for all network adapters
@@ -95,34 +100,69 @@ function Set-NetworkAdapterSettings {
         [int]$SubnetMask,
         [string]$Gateway,
         [string]$PreferredDNS,
-        [string]$AlternateDNS,
-        [bool]$DnsOverHttpsIPv4,
+        [string]$AlternateDNS = $null,
         [string]$IPv6Address,
-        [bool]$DnsOverHttpsIPv6
+        [int]$IPv6PrefixLength = 64,
+        [string]$IPv6Gateway = $null,
+        [string]$IPv6PreferredDNS = $null,
+        [string]$IPv6AlternateDNS = $null
     )
 
     # Setting IPv4
     if ($IPv4Address -and $SubnetMask -and $Gateway) {
-        # Remove existing IP configuration
-        Get-NetIPAddress -InterfaceAlias $AdapterName -AddressFamily IPv4 | Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue
-        # Add new IP configuration
-        New-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $IPv4Address -PrefixLength $SubnetMask -DefaultGateway $Gateway
-        # Set DNS
-        Set-DnsClientServerAddress -InterfaceAlias $AdapterName -ServerAddresses $PreferredDNS, $AlternateDNS
-        # Set DNS over HTTPS
-        Set-DnsClient -InterfaceAlias $AdapterName -UseDnsOverHttps $DnsOverHttpsIPv4
+        try {
+            # Remove existing IPv4 configuration
+            $existingIPv4 = Get-NetIPAddress -InterfaceAlias $AdapterName -AddressFamily IPv4 -ErrorAction SilentlyContinue
+            if ($existingIPv4) {
+                # Remove each existing IPv4 address and gateway
+                foreach ($ip in $existingIPv4) {
+                    Remove-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $ip.IPAddress -Confirm:$false
+                }
+            }
+
+            # Add new IPv4 configuration
+            New-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $IPv4Address -PrefixLength $SubnetMask -DefaultGateway $Gateway
+            
+            # Set DNS servers for IPv4
+            $dnsAddresses = @($PreferredDNS)
+            if ($AlternateDNS) {
+                $dnsAddresses += $AlternateDNS
+            }
+            Set-DnsClientServerAddress -InterfaceAlias $AdapterName -ServerAddresses $dnsAddresses
+        } catch {
+            Write-Host "Error setting IPv4 settings: $_"
+        }
     }
 
     # Setting IPv6
-    if ($IPv6Address) {
-        # Remove existing IPv6 configuration
-        Get-NetIPAddress -InterfaceAlias $AdapterName -AddressFamily IPv6 | Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue
-        # Add new IPv6 configuration
-        New-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $IPv6Address -PrefixLength 64
-        # Set DNS for IPv6
-        Set-DnsClientServerAddress -InterfaceAlias $AdapterName -AddressFamily IPv6 -ServerAddresses $PreferredDNS, $AlternateDNS
-        # Set DNS over HTTPS
-        Set-DnsClient -InterfaceAlias $AdapterName -UseDnsOverHttps $DnsOverHttpsIPv6
+    if ($IPv6Address -and $IPv6PrefixLength) {
+        try {
+            # Remove existing IPv6 configuration
+            $existingIPv6 = Get-NetIPAddress -InterfaceAlias $AdapterName -AddressFamily IPv6 -ErrorAction SilentlyContinue
+            if ($existingIPv6) {
+                # Remove each existing IPv6 address
+                foreach ($ip in $existingIPv6) {
+                    Remove-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $ip.IPAddress -Confirm:$false
+                }
+            }
+
+            # Add new IPv6 configuration
+            New-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $IPv6Address -PrefixLength $IPv6PrefixLength
+            
+            # Set gateway for IPv6 if specified
+            if ($IPv6Gateway) {
+                New-NetRoute -InterfaceAlias $AdapterName -DestinationPrefix "::/0" -NextHop $IPv6Gateway
+            }
+
+            # Set DNS servers for IPv6
+            $ipv6DnsAddresses = @($IPv6PreferredDNS)
+            if ($IPv6AlternateDNS) {
+                $ipv6DnsAddresses += $IPv6AlternateDNS
+            }
+            Set-DnsClientServerAddress -InterfaceAlias $AdapterName -ServerAddresses $ipv6DnsAddresses
+        } catch {
+            Write-Host "Error setting IPv6 settings: $_"
+        }
     }
 
     Write-Host "Settings updated for adapter: $AdapterName"
