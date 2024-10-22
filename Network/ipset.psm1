@@ -111,19 +111,17 @@ function Set-NetworkAdapterSettings {
     # Setting IPv4
     if ($IPv4Address -and $SubnetMask -and $Gateway) {
         try {
-            # Remove existing IPv4 configuration
             $existingIPv4 = Get-NetIPAddress -InterfaceAlias $AdapterName -AddressFamily IPv4 -ErrorAction SilentlyContinue
             if ($existingIPv4) {
-                # Remove each existing IPv4 address and gateway
                 foreach ($ip in $existingIPv4) {
                     Remove-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $ip.IPAddress -Confirm:$false
                 }
             }
-
-            # Add new IPv4 configuration
+            $existingGateway = Get-NetRoute -InterfaceAlias $AdapterName -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue
+            if ($existingGateway) {
+                Remove-NetRoute -InterfaceAlias $AdapterName -DestinationPrefix '0.0.0.0/0' -Confirm:$false
+            }
             New-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $IPv4Address -PrefixLength $SubnetMask -DefaultGateway $Gateway
-            
-            # Set DNS servers for IPv4
             $dnsAddresses = @($PreferredDNS)
             if ($AlternateDNS) {
                 $dnsAddresses += $AlternateDNS
@@ -135,31 +133,32 @@ function Set-NetworkAdapterSettings {
     }
 
     # Setting IPv6
-    if ($IPv6Address -and $IPv6PrefixLength) {
+    if ($IPv6Address -and $IPv6PrefixLength -ne $null) {
         try {
-            # Remove existing IPv6 configuration
             $existingIPv6 = Get-NetIPAddress -InterfaceAlias $AdapterName -AddressFamily IPv6 -ErrorAction SilentlyContinue
             if ($existingIPv6) {
-                # Remove each existing IPv6 address
                 foreach ($ip in $existingIPv6) {
                     Remove-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $ip.IPAddress -Confirm:$false
                 }
             }
-
-            # Add new IPv6 configuration
+            $existingIPv6Gateway = Get-NetRoute -InterfaceAlias $AdapterName -DestinationPrefix '::/0' -ErrorAction SilentlyContinue
+            if ($existingIPv6Gateway) {
+                Remove-NetRoute -InterfaceAlias $AdapterName -DestinationPrefix '::/0' -Confirm:$false
+            }
             New-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $IPv6Address -PrefixLength $IPv6PrefixLength
             
-            # Set gateway for IPv6 if specified
             if ($IPv6Gateway) {
                 New-NetRoute -InterfaceAlias $AdapterName -DestinationPrefix "::/0" -NextHop $IPv6Gateway
             }
 
-            # Set DNS servers for IPv6
-            $ipv6DnsAddresses = @($IPv6PreferredDNS)
-            if ($IPv6AlternateDNS) {
-                $ipv6DnsAddresses += $IPv6AlternateDNS
+            # Set DNS servers for IPv6 only if non-null
+            if ($IPv6PreferredDNS -or $IPv6AlternateDNS) {
+                $ipv6DnsAddresses = @($IPv6PreferredDNS)
+                if ($IPv6AlternateDNS) {
+                    $ipv6DnsAddresses += $IPv6AlternateDNS
+                }
+                Set-DnsClientServerAddress -InterfaceAlias $AdapterName -ServerAddresses $ipv6DnsAddresses
             }
-            Set-DnsClientServerAddress -InterfaceAlias $AdapterName -ServerAddresses $ipv6DnsAddresses
         } catch {
             Write-Host "Error setting IPv6 settings: $_"
         }

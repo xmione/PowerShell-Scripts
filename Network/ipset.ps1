@@ -1,14 +1,16 @@
 ﻿<#
     Author  : Solomio S. Sisante
-    Creatod : October 19, 2024
+    Created : October 19, 2024
     FileName: ipset.ps1
     Purpose : To import modules from ipset.psm1
 
-    Note    : There is a batch file import-ipset.bat that you can right click and run as admin from the Windows Explorer to run this script.
-
+    Note    : There is a batch file run.bat that you can right click and run as admin from the Windows Explorer to run this script.
+            : Replace the settings at the bottom of this file to specify your desired settings.
     .\ipset.ps1
-
 #>
+
+# Set module version
+$requiredModuleVersion = '1.0.0.0'  # <-- Major.Minor.Patch.Revision
 
 # Get the current script root directory
 $scriptRoot = $PSScriptRoot
@@ -16,12 +18,17 @@ $scriptFileFullPath = "$scriptRoot\ipset.psm1"
 $moduleName = [System.IO.Path]::GetFileNameWithoutExtension($scriptFileFullPath)
 
 # Check if the module is loaded
-if (Get-Module -Name $moduleName) {
-    Write-Host "Removing module: $moduleName"
-    try {
-        Remove-Module -Name $moduleName -Force
-    } catch {
-        Write-Host "Failed to remove module: $moduleName - $_"
+$loadedModule = Get-Module -Name $moduleName
+if ($loadedModule) {
+    if ($loadedModule.Version -ne $requiredModuleVersion) {
+        Write-Host "Loaded module version ($($loadedModule.Version)) does not match the required version ($requiredModuleVersion). Removing module."
+        try {
+            Remove-Module -Name $moduleName -Force
+        } catch {
+            Write-Host "Failed to remove module: $moduleName - $_"
+        }
+    } else {
+        Write-Host "Module $moduleName is already loaded with the correct version ($requiredModuleVersion)."
     }
 } else {
     Write-Host "Module $moduleName is not loaded."
@@ -33,9 +40,34 @@ Write-Host "Modules after removal:"
 Get-Module
 
 # Import the specified module
-Write-Host "Importing module from $scriptFileFullPath"
+Write-Host "Importing module from $scriptFileFullPath with version $requiredModuleVersion"
 Import-Module -Name $scriptFileFullPath
 
 Write-Host "============================================================"
 Write-Host "Modules after importing:"
 Get-Module
+
+# Check if the module is imported with the correct version
+$importedModule = Get-Module -Name $moduleName
+if ($importedModule.Version -eq $requiredModuleVersion) {
+    Write-Host "$moduleName imported successfully with version $requiredModuleVersion."
+} else {
+    Write-Host "Warning: $moduleName imported, but version ($($importedModule.Version)) does not match the required version ($requiredModuleVersion)."
+}
+
+# Get and Set Network Adapter Settings
+Get-NetworkAdapterSettings
+
+Set-NetworkAdapterSettings -AdapterName "vEthernet (Bridged Network)" `
+                            -IPv4Address "192.168.100.73" `
+                            -SubnetMask 24 `
+                            -Gateway "192.168.100.1" `
+                            -PreferredDNS "8.8.8.8" `
+                            -AlternateDNS $null `
+                            -DnsOverHttpsIPv4 $false `
+                            -IPv6Address "fe80::c80a:d920:24dd:3f05" `
+                            -IPv6PrefixLength 64 `
+                            -IPv6Gateway $null `
+                            -IPv6PreferredDNS $null `
+                            -IPv6AlternateDNS $null `
+                            -DnsOverHttpsIPv6 $false
