@@ -5,30 +5,38 @@ $WorkingDir = "C:\repo\PowerShell-Scripts\DigitalSign"
 $ExcelFile = "C:\repo\PowerShell-Scripts\DigitalSign\NumberToWord.xlsm"
 $CertificatePath = "C:\repo\PowerShell-Scripts\DigitalSign\NumberToWord.pfx"
 $CertificatePassword = $env:NumberToWordCertPass
+$SignToolExe = Join-Path -Path $WorkingDir -ChildPath "signtool.exe"
 
-# Download and install Windows 10 SDK
-$SdkInstallerPath = "C:\WindowsSDKInstaller.exe"
-Invoke-WebRequest -Uri $SdkDownloadUrl -OutFile $SdkInstallerPath
-Start-Process -FilePath $SdkInstallerPath -ArgumentList "/quiet" -Wait
+# Check if signtool.exe already exists in the working directory
+if (-Not (Test-Path -Path $SignToolExe)) {
+    # If signtool.exe doesn't exist, download and install Windows SDK
+    Write-Host "signtool.exe not found. Downloading and installing SDK..."
 
-# Wait for the SDK installation to complete
-Start-Sleep -Seconds 300
+    # Download and install Windows 10 SDK
+    $SdkInstallerPath = "C:\WindowsSDKInstaller.exe"
+    Invoke-WebRequest -Uri $SdkDownloadUrl -OutFile $SdkInstallerPath
+    Start-Process -FilePath $SdkInstallerPath -ArgumentList "/quiet" -Wait
 
-# Locate signtool.exe explicitly for x64 platform
-$SignToolPath = Get-ChildItem -Path "$SdkInstallPath\bin" -Recurse -Filter signtool.exe | Where-Object {
-    $_.FullName -like "*x64*"
-} | Select-Object -First 1
+    # Wait for the SDK installation to complete (adjust the wait time as needed)
+    Start-Sleep -Seconds 300
 
-if ($null -eq $SignToolPath) {
-    Write-Error "Could not locate a compatible x64 signtool.exe. Verify SDK installation."
-    exit 1
+    # Locate signtool.exe explicitly for x64 platform
+    $SignToolPath = Get-ChildItem -Path "$SdkInstallPath\bin" -Recurse -Filter signtool.exe | Where-Object {
+        $_.FullName -like "*x64*"
+    } | Select-Object -First 1
+
+    if ($null -eq $SignToolPath) {
+        Write-Error "Could not locate a compatible x64 signtool.exe. Verify SDK installation."
+        exit 1
+    } else {
+        Write-Host "Compatible signtool.exe located at $($SignToolPath.FullName)"
+    }
+
+    # Copy signtool.exe to the working directory
+    Copy-Item -Path $SignToolPath.FullName -Destination $WorkingDir
 } else {
-    Write-Host "Compatible signtool.exe located at $($SignToolPath.FullName)"
+    Write-Host "signtool.exe already exists in the working directory. Proceeding with signing."
 }
 
-# Copy signtool.exe to working directory
-Copy-Item -Path $SignToolPath.FullName -Destination $WorkingDir
-
-# Use the copied signtool.exe for signing
-$SignToolExe = Join-Path -Path $WorkingDir -ChildPath "signtool.exe"
+# Use the copied or already present signtool.exe for signing
 Start-Process -FilePath $SignToolExe -ArgumentList "/a", "/f", $CertificatePath, "/p", $CertificatePassword, $ExcelFile -Wait
