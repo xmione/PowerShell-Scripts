@@ -62,15 +62,18 @@ $WorkflowRuns | ForEach-Object {
 
     # Delete the workflow run
     try {
-        $response = Invoke-RestMethod -Uri $DeleteUrl -Method Delete -Headers $Headers
-        if ($response -eq $null) {
+        $response = Invoke-RestMethod -Uri $DeleteUrl -Method Delete -Headers $Headers -ErrorAction Stop
+        if ($response -eq $null -or $response -eq "") {
             Write-Host "Successfully deleted workflow run $RunName (ID: $RunId)"
         } else {
-            Write-Host "Failed to delete workflow run $RunName (ID: $RunId)"
+            Write-Host "Unexpected response while deleting workflow run $RunName (ID: $RunId): $($response | ConvertTo-Json -Depth 10)"
         }
     } catch {
-        Write-Host "Error while deleting workflow run $RunName (ID: $RunId): $_"
+        Write-Host "Error while deleting workflow run $RunName (ID: $RunId): $($_.Exception.Message)"
+        Write-Host "Full Error: $($_ | ConvertTo-Json -Depth 10)"
     }
+    
+    
 }
 
 Write-Host "Finished processing workflow runs."
