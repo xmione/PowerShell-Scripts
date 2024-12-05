@@ -9,8 +9,19 @@
     .\ipset.ps1
 #>
 
+Clear-Host
+
 # Set module version
 $requiredModuleVersion = '1.0.0.0'  # <-- Major.Minor.Patch.Revision
+
+# Set variables for network adapter and IP settings 
+$AdapterName = "vEthernet (Bridged Network)" 
+$IPAddress = "192.168.100.73" 
+$SubnetMask = 24 
+$Gateway = "192.168.100.1" 
+$PreferredDNS = "8.8.8.8" 
+$IPv6Address = "fe80::c80a:d920:24dd:3f05" 
+$IPv6PrefixLength = 64
 
 # Get the current script root directory
 $scriptRoot = $PSScriptRoot
@@ -55,18 +66,33 @@ if ($importedModule.Version -eq $requiredModuleVersion) {
     Write-Host "Warning: $moduleName imported, but version ($($importedModule.Version)) does not match the required version ($requiredModuleVersion)."
 }
 
+# Check if the IP address exists 
+$existingIP = Get-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $IPAddress -ErrorAction SilentlyContinue 
+
+# If the IP address exists, remove it 
+if ($existingIP) { 
+    Write-Host "Remove-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $IPAddress -Confirm:$false"
+    Remove-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $IPAddress -Confirm:$false 
+}
+
 # Get and Set Network Adapter Settings
+Write-Host "=================================================================================================================="
+Write-Host "Get-NetworkAdapterSettings"
+Write-Host "=================================================================================================================="
 Get-NetworkAdapterSettings
 
-Set-NetworkAdapterSettings -AdapterName "vEthernet (Bridged Network)" `
-                            -IPv4Address "192.168.100.73" `
-                            -SubnetMask 24 `
-                            -Gateway "192.168.100.1" `
-                            -PreferredDNS "8.8.8.8" `
+Write-Host "=================================================================================================================="
+Write-Host "Set-NetworkAdapterSettings"
+Write-Host "=================================================================================================================="
+Set-NetworkAdapterSettings -AdapterName $AdapterName `
+                            -IPv4Address $IPAddress `
+                            -SubnetMask $SubnetMask `
+                            -Gateway $Gateway `
+                            -PreferredDNS $PreferredDNS `
                             -AlternateDNS $null `
                             -DnsOverHttpsIPv4 $false `
-                            -IPv6Address "fe80::c80a:d920:24dd:3f05" `
-                            -IPv6PrefixLength 64 `
+                            -IPv6Address $IPv6Address `
+                            -IPv6PrefixLength $IPv6PrefixLength `
                             -IPv6Gateway $null `
                             -IPv6PreferredDNS $null `
                             -IPv6AlternateDNS $null `

@@ -113,15 +113,13 @@ function Set-NetworkAdapterSettings {
         try {
             $existingIPv4 = Get-NetIPAddress -InterfaceAlias $AdapterName -AddressFamily IPv4 -ErrorAction SilentlyContinue
             if ($existingIPv4) {
-                foreach ($ip in $existingIPv4) {
-                    Remove-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $ip.IPAddress -Confirm:$false
-                }
+                Remove-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $IPv4Address -Confirm:$false 
             }
             $existingGateway = Get-NetRoute -InterfaceAlias $AdapterName -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue
             if ($existingGateway) {
                 Remove-NetRoute -InterfaceAlias $AdapterName -DestinationPrefix '0.0.0.0/0' -Confirm:$false
             }
-            New-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $IPv4Address -PrefixLength $SubnetMask -DefaultGateway $Gateway
+            New-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $IPv4Address -PrefixLength $SubnetMask -DefaultGateway $Gateway -ErrorAction Stop
             $dnsAddresses = @($PreferredDNS)
             if ($AlternateDNS) {
                 $dnsAddresses += $AlternateDNS
@@ -135,20 +133,63 @@ function Set-NetworkAdapterSettings {
     # Setting IPv6
     if ($IPv6Address -and $IPv6PrefixLength -ne $null) {
         try {
-            $existingIPv6 = Get-NetIPAddress -InterfaceAlias $AdapterName -AddressFamily IPv6 -ErrorAction SilentlyContinue
-            if ($existingIPv6) {
-                foreach ($ip in $existingIPv6) {
-                    Remove-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $ip.IPAddress -Confirm:$false
+           # Check if the IPv6 address exists and remove it before adding the new one
+            Write-Host "Removing existing IPv6 addresses for adapter $AdapterName :"
+
+            # Remove any existing IPv6 addresses
+            Get-NetIPAddress -InterfaceAlias $AdapterName -AddressFamily IPv6 -ErrorAction SilentlyContinue | ForEach-Object {
+                Write-Host "Removing IP Address: $($_.IPAddress)"
+                Remove-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $_.IPAddress -Confirm:$false -ErrorAction SilentlyContinue
+            }
+
+            # Remove IPv6 addresses from PersistentStore
+            Write-Host "Removing IPv6 addresses from PersistentStore for adapter $AdapterName :"
+            Get-NetIPAddress -InterfaceAlias $AdapterName -AddressFamily IPv6 -PolicyStore PersistentStore -ErrorAction SilentlyContinue | ForEach-Object {
+                Write-Host "Removing IP Address from PersistentStore: $($_.IPAddress)"
+                Remove-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $_.IPAddress -PolicyStore PersistentStore -Confirm:$false -ErrorAction SilentlyContinue
+            }
+
+            # Reset IPv6 configuration using netsh
+            Write-Host "Resetting IPv6 configuration using netsh:"
+            netsh interface ipv6 reset
+            Write-Host "Please restart the computer to complete the reset if prompted."
+
+            # Check for duplicate IP addresses
+            Write-Host "Checking for duplicate IP addresses (this may return no results if the address is correctly removed):"
+            try {
+                $duplicateIPs = Get-NetIPAddress -IPAddress $IPv6Address -ErrorAction Stop
+                if ($duplicateIPs) {
+                    $duplicateIPs | Format-Table
                 }
+            } catch {
+                Write-Host "No duplicate IP addresses found."
             }
-            $existingIPv6Gateway = Get-NetRoute -InterfaceAlias $AdapterName -DestinationPrefix '::/0' -ErrorAction SilentlyContinue
-            if ($existingIPv6Gateway) {
-                Remove-NetRoute -InterfaceAlias $AdapterName -DestinationPrefix '::/0' -Confirm:$false
+
+            # Ensure network adapter is active
+            Write-Host "Ensuring network adapter $AdapterName is active:"
+            Get-NetAdapter -Name $AdapterName | Enable-NetAdapter
+
+            # Retry setting the IPv6 address
+            Write-Host "Retrying to set the IPv6 address $IPv6Address on adapter $AdapterName :"
+            try {
+                New-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $IPv6Address -PrefixLength $IPv6PrefixLength -ErrorAction Stop
+                Write-Host "Successfully set IPv6 address $IPv6Address on adapter $AdapterName."
+            } catch {
+                Write-Host "Error setting IPv6 settings: $_"
+                $errorRecord = $_
+                Write-Host "Exception Type: $($errorRecord.Exception.GetType().FullName)"
+                Write-Host "Error Message: $($errorRecord.Exception.Message)"
+                Write-Host "Stack Trace: $($errorRecord.Exception.StackTrace)"
+                Write-Host "Fully Qualified Error ID: $($errorRecord.FullyQualifiedErrorId)"
+                Write-Host "Error Category: $($errorRecord.CategoryInfo.Category)"
+                Write-Host "Target Object: $($errorRecord.TargetObject)"
+                Write-Host "Invocation Info: $($errorRecord.InvocationInfo)"
             }
-            New-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $IPv6Address -PrefixLength $IPv6PrefixLength
-            
+
+
+            # Set new IPv6 route if specified
             if ($IPv6Gateway) {
-                New-NetRoute -InterfaceAlias $AdapterName -DestinationPrefix "::/0" -NextHop $IPv6Gateway
+                New-NetRoute -InterfaceAlias $AdapterName -DestinationPrefix "::/0" -NextHop $IPv6Gateway -ErrorAction Stop
             }
 
             # Set DNS servers for IPv6 only if non-null
@@ -161,6 +202,15 @@ function Set-NetworkAdapterSettings {
             }
         } catch {
             Write-Host "Error setting IPv6 settings: $_"
+            Write-Host "Detailed error information:"
+            $errorRecord = $_
+            Write-Host "Exception Type: $($errorRecord.Exception.GetType().FullName)"
+            Write-Host "Error Message: $($errorRecord.Exception.Message)"
+            Write-Host "Stack Trace: $($errorRecord.Exception.StackTrace)"
+            Write-Host "Fully Qualified Error ID: $($errorRecord.FullyQualifiedErrorId)"
+            Write-Host "Error Category: $($errorRecord.CategoryInfo.Category)"
+            Write-Host "Target Object: $($errorRecord.TargetObject)"
+            Write-Host "Invocation Info: $($errorRecord.InvocationInfo)"
         }
     }
 
