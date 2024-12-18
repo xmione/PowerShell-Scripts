@@ -1,21 +1,3 @@
-# Create Internal Switch
-```
-# .\create-internal-switch.ps1
-# Check if the internal switch exists
-$SwitchName = "Internal"
-$existingSwitch = Get-VMSwitch -Name $SwitchName -ErrorAction SilentlyContinue
-if (-not $existingSwitch) {
-    Write-Host "Creating Internal Switch: $SwitchName"
-    New-VMSwitch -Name $SwitchName -SwitchType Internal
-} else {
-    Write-Host "Internal Switch $SwitchName already exists."
-}
-
-```
-
-## Assign Internal Switch
-
-```
 # .\assign-internal-switch.ps1
 
 # Assign a Static IP to the VM's Internal Adapter
@@ -43,5 +25,3 @@ Invoke-Expression $EnableICSCommand
 Write-Host "ICS enabled on Host adapter ($HostAdapterName)."
 
 Write-Host "VM adapter ($VMAdapterName) is configured with static IP and connected to the Internal Switch."
-
-```
