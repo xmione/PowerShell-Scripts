@@ -1,9 +1,9 @@
 ﻿@ECHO OFF
 ECHO =========================================================================================
-ECHO File Name  : run.bat
+ECHO File Name  : ipset.bat
 ECHO Author     : Solomio S. Sisante
 ECHO Created    : October 19, 2024
-ECHO Purpose    : To import Network Tools and run it's modules.
+ECHO Purpose    : To import and run IPSet Network Tools modules.
 ECHO =========================================================================================
 ECHO %~dp0  
 

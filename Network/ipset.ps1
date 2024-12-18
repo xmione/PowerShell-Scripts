@@ -2,9 +2,9 @@
     Author  : Solomio S. Sisante
     Created : October 19, 2024
     FileName: ipset.ps1
-    Purpose : To import modules from ipset.psm1
+    Purpose : To import modules from ipset.psm1 and run them to set Host Machine's IPv4 and IPv6 Settings.
 
-    Note    : There is a batch file run.bat that you can right click and run as admin from the Windows Explorer to run this script.
+    Note    : There is a batch file ipset.bat that you can right click and run as admin from the Windows Explorer to run this script.
             : Replace the settings at the bottom of this file to specify your desired settings.
     .\ipset.ps1
 #>
