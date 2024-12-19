@@ -3,18 +3,23 @@ Clear-Host
 # Define variables
 $VMName = "Windows 11 dev environment"
 $InternalSwitchName = "Internal"
-$VMAdapterName = "Ethernet"  # Name of VM's network adapter (typically "Ethernet")
-$HostInternalAdapterName = "vEthernet (Internal)"  # Host adapter for internal switch
-$HostBridgedAdapterName = "vEthernet (Bridged Network)"  # Host adapter for bridged network
-$HostInternalIP = "192.168.100.74"          # Static IP for Host's internal adapter
-$VMIPAddress = "192.168.100.75"            # Static IP for VM
-$VMSubnetMask = 24                         # Subnet mask for VM
+$HostBridgedAdapterName = "vEthernet (Bridged Network)"
+$HostInternalAdapterName = "vEthernet (Internal)"
+$HostInternalIP = "192.168.100.74"
+$VMIPAddress = "192.168.100.75"
+$VMSubnetMask = 24
 $DNS = "8.8.8.8"
-$DefaultGateway = "192.168.100.1"          # Gateway for the VM
+$DefaultGateway = "192.168.100.1"
 
 # Define username and password
-$VMAdminUserName = $env:VMAdminUserName  # Replace with actual username
-$VMPassword = $env:VMPassword  # Replace with actual password
+$VMAdminUserName = $env:VMAdminUserName
+$VMPassword = $env:VMPassword
+
+# Check if username and password are set
+if (-not $VMAdminUserName -or -not $VMPassword) {
+    Write-Error "Environment variables for VM admin username or password are not set. Please set them and rerun the script."
+    exit 1
+}
 
 # Create a PSCredential object
 $SecurePassword = ConvertTo-SecureString $VMPassword -AsPlainText -Force
@@ -32,6 +37,14 @@ if (-not (Get-VMSwitch -Name $InternalSwitchName -ErrorAction SilentlyContinue))
 Write-Output "Assigning static IP address to the host's internal adapter..."
 $HostInternalAdapter = Get-NetAdapter | Where-Object { $_.Name -eq $HostInternalAdapterName }
 if ($HostInternalAdapter) {
+    # Check if the IP address is already configured
+    $existingIP = Get-NetIPAddress -InterfaceAlias $HostInternalAdapter.Name -AddressFamily IPv4 -ErrorAction SilentlyContinue
+    if ($existingIP) {
+        Write-Output "Existing IP configuration found: $($existingIP.IPAddress). Removing it..."
+        Remove-NetIPAddress -InterfaceAlias $HostInternalAdapter.Name -IPAddress $existingIP.IPAddress -Confirm:$false
+    }
+
+    # Assign new static IP
     New-NetIPAddress -InterfaceAlias $HostInternalAdapter.Name -IPAddress $HostInternalIP -PrefixLength $VMSubnetMask -DefaultGateway $DefaultGateway -AddressFamily IPv4 -ErrorAction SilentlyContinue
     Set-DnsClientServerAddress -InterfaceAlias $HostInternalAdapter.Name -ServerAddresses $DNS
 } else {
@@ -111,17 +124,24 @@ Invoke-Command -VMName $VMName -ScriptBlock {
 
 Write-Output "Static IP assignment complete."
 
-# Enable Internet Connection Sharing (ICS) on the Host
-Write-Output "Enabling Internet Connection Sharing on the host..."
-$HostBridgedAdapter = Get-NetAdapter -Name $HostBridgedAdapterName -ErrorAction SilentlyContinue
-if ($HostBridgedAdapter) {
-    $HostBridgedAdapterIndex = $HostBridgedAdapter.ifIndex
-    $EnableICSCommand = "netsh interface ip set interface $HostBridgedAdapterIndex forwarding=enabled store=persistent"
-    Invoke-Expression $EnableICSCommand
-    Write-Output "ICS enabled on Host adapter ($HostBridgedAdapterName)."
+# Enable ICS on the host adapter (Bridged Network)
+Write-Output "Enabling ICS on $HostBridgedAdapterName..."
+$hostBridgedAdapter = Get-NetAdapter -Name $HostBridgedAdapterName -ErrorAction SilentlyContinue
+$hostInternalAdapter = Get-NetAdapter -Name $HostInternalAdapterName -ErrorAction SilentlyContinue
+
+if ($hostBridgedAdapter -and $hostInternalAdapter) {
+    if ($hostBridgedAdapter.Status -eq 'Up') {
+        Write-Output "Host adapter is up, enabling ICS..."
+        # Enable ICS using netsh
+        $shareCommand = "netsh interface set interface name=`"$HostBridgedAdapterName`" interface name=`"$HostInternalAdapterName`""
+        Invoke-Expression $shareCommand
+        Write-Output "ICS enabled on $HostBridgedAdapterName."
+    } else {
+        Write-Error "Host adapter is not up: $HostBridgedAdapterName."
+    }
 } else {
-    Write-Error "No valid adapter named '$HostBridgedAdapterName' found for internet sharing. Check adapter name."
-    exit 1
+    Write-Error "Bridged Network adapter or Internal adapter not found."
 }
 
 Write-Output "VM adapter ($VMAdapterName) is configured with static IP and connected to the Internal Switch."
+Write-Output "ICS configuration completed."
