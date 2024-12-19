@@ -24,12 +24,26 @@
 
 #>
 
+# Function to convert prefix length to subnet mask
+function ConvertTo-SubnetMask {
+    param (
+        [int]$prefixLength
+    )
+
+    if ($prefixLength -lt 0 -or $prefixLength -gt 32) {
+        throw "Prefix length must be between 0 and 32."
+    }
+
+    # Generate a binary subnet mask
+    $binaryMask = ('1' * [int]$prefixLength).PadRight(32, '0')
+
+    # Split into octets, convert to decimal, and join as a string
+    $octets = $binaryMask -split '(.{8})' | Where-Object { $_ -ne '' }
+    return ($octets | ForEach-Object { [convert]::ToInt32($_, 2) }) -join '.'
+}
+
 # Function to get the current IPv4 and IPv6 settings for all network adapters
 function Get-NetworkAdapterSettings {
-    # Function to convert prefix length to subnet mask
-    function ConvertTo-SubnetMask($prefixLength) {
-        return [string]::Join('.', ([Convert]::ToString(([math]::Pow(2, 32) - [math]::Pow(2, 32 - $prefixLength)), 2) -split '(?<=\G.{8})(?!$)' | % {[Convert]::ToInt32($_, 2)}))
-    }
 
     # Retrieve all network adapters
     $adapters = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
@@ -40,14 +54,30 @@ function Get-NetworkAdapterSettings {
         # Get IPv4 settings
         $ipv4Info = Get-NetIPAddress -InterfaceAlias $adapterName -AddressFamily IPv4 -ErrorAction SilentlyContinue
         if ($ipv4Info) {
+            # Ensure PrefixLength is valid and not an array
+            if ($ipv4Info.PrefixLength -is [int]) {
+                $prefixLength = [int]$ipv4Info.PrefixLength
+            } elseif ($ipv4Info.PrefixLength -is [object[]]) {
+                $prefixLength = [int]$ipv4Info.PrefixLength[0]
+            } elseif ($ipv4Info.PrefixLength -is [object]) {
+                $prefixLength = [int]$ipv4Info.PrefixLength
+            } else {
+                throw "Invalid PrefixLength format: $($ipv4Info.PrefixLength)"
+            }
+
+            #$prefixLength=24
+            $subnetMask = ConvertTo-SubnetMask -prefixLength $prefixLength
+                
+            Write-Host "PrefixLength Raw: $($ipv4Info.PrefixLength)"
+            Write-Host "PrefixLength Processed: $prefixLength"
+
             # Check for IPv4 gateway
             $gatewayInfo = Get-NetRoute -InterfaceAlias $adapterName -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue
             $gateway = if ($gatewayInfo) { $gatewayInfo.NextHop } else { "No gateway set" }
             $dnsInfo = Get-DnsClientServerAddress -InterfaceAlias $adapterName -AddressFamily IPv4
             $preferredDns = if ($dnsInfo) { $dnsInfo.ServerAddresses[0] } else { "No DNS set" }
             $alternateDns = if ($dnsInfo -and $dnsInfo.ServerAddresses.Count -gt 1) { $dnsInfo.ServerAddresses[1] } else { "No alternate DNS set" }
-            $subnetMask = ConvertTo-SubnetMask $ipv4Info.PrefixLength
-
+            
             # Check DNS over HTTPS for IPv4
             $dnsClientSettings = Get-DnsClient -InterfaceAlias $adapterName
             $dnsOverHttpsIPv4 = if ($dnsClientSettings.UseDnsOverHttps -eq $true) { "On" } else { "Off" }
@@ -113,11 +143,14 @@ function Set-NetworkAdapterSettings {
         try {
             $existingIPv4 = Get-NetIPAddress -InterfaceAlias $AdapterName -AddressFamily IPv4 -ErrorAction SilentlyContinue
             if ($existingIPv4) {
-                Remove-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $IPv4Address -Confirm:$false 
+                Write-Host "IPv4Address: $($existingIPv4.IPv4Address)"
+                Write-Host "AdapterName: $($existingIPv4.InterfaceAlias)"
+
+                Remove-NetIPAddress -InterfaceAlias $existingIPv4.InterfaceAlias -IPAddress $existingIPv4.IPv4Address -Confirm:$false 
             }
             $existingGateway = Get-NetRoute -InterfaceAlias $AdapterName -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue
             if ($existingGateway) {
-                Remove-NetRoute -InterfaceAlias $AdapterName -DestinationPrefix '0.0.0.0/0' -Confirm:$false
+                Remove-NetRoute -InterfaceAlias $existingGateway.InterfaceAlias -DestinationPrefix '0.0.0.0/0' -Confirm:$false
             }
             New-NetIPAddress -InterfaceAlias $AdapterName -IPAddress $IPv4Address -PrefixLength $SubnetMask -DefaultGateway $Gateway -ErrorAction Stop
             $dnsAddresses = @($PreferredDNS)
