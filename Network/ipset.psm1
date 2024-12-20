@@ -121,7 +121,6 @@ function Get-NetworkAdapterSettings {
     }
 }
 
-
 # Function to set the IPv4 and IPv6 settings for a specified adapter
 function Set-NetworkAdapterSettings {
     param (
@@ -250,4 +249,97 @@ function Set-NetworkAdapterSettings {
     Write-Host "Settings updated for adapter: $AdapterName"
 }
 
-Export-ModuleMember -Function Get-NetworkAdapterSettings, Set-NetworkAdapterSettings
+# Example usage
+# Remove-HostNetworkAdapter -AdapterName "vEthernet (InternalSwitch)"
+function Remove-HostNetworkAdapter {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$AdapterName
+    )
+
+    try {
+        # Get the network adapter device
+        $adapter = Get-NetAdapter -Name $AdapterName
+
+        if ($adapter) {
+            $pnpDevice =  Get-PnpDevice -FriendlyName $adapter.InterfaceDescription 
+            # Uninstall the network adapter using pnputil
+            $cmd = "pnputil /remove-device `"$($pnpDevice.InstanceId)`""
+            Invoke-Expression $cmd
+
+            Write-Output "Network adapter '$AdapterName' removed successfully."
+        } else {
+            Write-Error "Network adapter '$AdapterName' not found or already removed."
+        }
+    } catch {
+        Write-Error "Failed to remove network adapter '$AdapterName'. Error: $_"
+    }
+}
+  
+# Example usage
+# Disable-HostNetworkAdapter -AdapterName "vEthernet (InternalSwitch)"
+function Disable-HostNetworkAdapter {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$AdapterName
+    )
+
+    try {
+        # Get the network adapter device
+        $adapter = Get-PnpDevice -FriendlyName "*$AdapterName*" | Where-Object { $_.Status -eq "OK" }
+
+        if ($adapter) {
+            # Disable the network adapter
+            Disable-PnpDevice -InstanceId $adapter.InstanceId -Confirm:$false
+
+            Write-Output "Network adapter '$AdapterName' disabled successfully."
+        } else {
+            Write-Error "Network adapter '$AdapterName' not found or already disabled."
+        }
+    } catch {
+        Write-Error "Failed to disable network adapter '$AdapterName'. Error: $_"
+    }
+}
+
+# Example usage
+# Remove-VMNetworkAdapter -VMName "Windows 11 dev environment" -AdapterName "vEthernet (Default Switch)"
+function Remove-VMNetworkAdapter {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$VMName,
+        [Parameter(Mandatory = $true)]
+        [string]$AdapterName
+    )
+
+    try {
+        # Remove the network adapter from the VM
+        Remove-VMNetworkAdapter -VMName $VMName -Name $AdapterName -Confirm:$false
+
+        Write-Output "Network adapter '$AdapterName' removed from VM '$VMName' successfully."
+    } catch {
+        Write-Error "Failed to remove network adapter '$AdapterName' from VM '$VMName'. Error: $_"
+    }
+}
+
+# Example usage
+# Get-VMNetworkAdapters -VMName "Windows 11 dev environment"
+function Get-VMNetworkAdapters {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$VMName
+    )
+
+    try {
+        # Get the list of network adapters in the VM
+        $vmNetworkAdapters = Get-VMNetworkAdapter -VMName $VMName
+
+        # Display the network adapters
+        $vmNetworkAdapters | Format-Table -Property Name, IsEnabled, MacAddress, SwitchName
+
+        return $vmNetworkAdapters
+    } catch {
+        Write-Error "Failed to get network adapters for VM '$VMName'. Error: $_"
+    }
+}
+
+Export-ModuleMember -Function Get-NetworkAdapterSettings, Set-NetworkAdapterSettings, Remove-HostNetworkAdapter, Remove-VMNetworkAdapter, Disable-HostNetworkAdapter, Get-VMNetworkAdapters 
