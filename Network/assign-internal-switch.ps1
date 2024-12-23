@@ -1,3 +1,4 @@
+# ./assign-internal-switch.ps1
 Clear-Host
 
 # Define variables

@@ -97,3 +97,7 @@ Set-NetworkAdapterSettings -AdapterName $AdapterName `
                             -IPv6PreferredDNS $null `
                             -IPv6AlternateDNS $null `
                             -DnsOverHttpsIPv6 $false
+
+
+Set-VM-Network-Adapter
+Add-VMFirewallRule                            
